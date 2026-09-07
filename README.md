@@ -39,6 +39,17 @@ Copy [.env.example](.env.example) to `.env`, or pass `--env-file PATH`. Run the 
 python -m unittest discover -s automated_test -p "test_*.py" -v
 ```
 
+For the bundled ten-day fixture, use the testing configuration to see a reduction:
+
+```text
+git -C automated_test/repository switch master
+python squash_old_commits.py --env-file automated_test/.env.testing
+git -C automated_test/repository rev-list --count master
+git -C automated_test/repository rev-list --count HEAD
+```
+
+The expected counts are `30` for `master` and `23` for the checked-out `squashed/YYYY_MM_DD` branch. The source branch remains unchanged by design. If `UNSQUASHED_DAYS=14` is used with this ten-day fixture, all commits are within the retention window and no reduction is expected.
+
 ## Preconditions
 
 The target must:
