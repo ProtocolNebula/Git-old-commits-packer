@@ -9,9 +9,9 @@ The utility will keep the most recent configured number of days as individual co
 
 ## Repository status
 
-The repository is currently documentation-only. It intentionally contains no production script, automated test implementation, or executable `.env` files.
+The production script and standard-library integration tests are implemented. The generated Git fixture under `automated_test/repository` is disposable and ignored by Git.
 
-## Planned interface
+## Command-line interface
 
 ```text
 python squash_old_commits.py \
@@ -19,7 +19,7 @@ python squash_old_commits.py \
   [--repository-path PATH] \
   [--unsquashed-days N] \
   [--max-commits-per-day X] \
-  [--force]
+  [--force | --no-force]
 ```
 
 Configuration keys:
@@ -31,7 +31,13 @@ MAX_COMMITS_PER_DAY=2
 FORCE=false
 ```
 
-Explicit command-line values take precedence over values in the selected environment file.
+Explicit command-line values take precedence over values in the selected environment file. Install runtime dependencies with `python -m pip install -r requirements.txt`.
+
+Copy [.env.example](.env.example) to `.env`, or pass `--env-file PATH`. Run the tests with:
+
+```text
+python -m unittest discover -s automated_test -p "test_*.py" -v
+```
 
 ## Preconditions
 
@@ -51,4 +57,3 @@ Always preserve or back up important refs before testing a history-rewriting too
 - [Test plan](docs/test-plan.md) defines the mandatory reusable integration fixture and test scenarios.
 - [Safety and recovery](docs/safety-and-recovery.md) explains risks, guarantees, and recovery expectations.
 - [AGENTS.md](AGENTS.md) contains constraints for future coding agents working in this repository.
-

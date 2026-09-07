@@ -4,7 +4,7 @@ The terms **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are used normatively.
 
 ## 1. Purpose and scope
 
-The product MUST be a standalone, typed Python command-line utility that creates a rewritten branch from the currently checked-out branch of a configured Git repository.
+The product MUST be a standalone, typed Python command-line utility that creates a rewritten branch from the currently checked-out branch of a configured Git repository. Third-party dependencies MAY be used when they materially improve correctness or maintainability, and MUST be declared in the project dependency manifest.
 
 The utility MUST reduce older history to a bounded number of representative commits per day and MUST replay recent history one commit at a time. It MUST NOT modify the source branch.
 
@@ -30,15 +30,15 @@ The utility MUST expose:
 | `--repository-path PATH` | `REPOSITORY_PATH` | path | Required |
 | `--unsquashed-days N` | `UNSQUASHED_DAYS` | integer | Required; `N >= 0` |
 | `--max-commits-per-day X` | `MAX_COMMITS_PER_DAY` | integer | Required; `X > 0` |
-| `--force` | `FORCE` | boolean | Optional; defaults to false |
+| `--force` / `--no-force` | `FORCE` | boolean | Optional; defaults to false |
 | `--env-file PATH` | n/a | path | Optional; defaults to `.env` beside the script |
 
 - Explicit CLI options MUST override matching environment-file values.
-- The implementation MUST use standard Python double-dash option spelling only.
+- The implementation MUST use standard Python double-dash option spelling only. Both `--force` and `--no-force` MUST be accepted so a command-line value can override either `.env` boolean value.
 - An explicitly supplied missing environment file MUST be an error. A missing default `.env` MAY be ignored if all required values are supplied on the command line.
 - Relative `REPOSITORY_PATH` values read from a file MUST resolve relative to that file. A CLI repository path MUST resolve relative to the caller's working directory.
-- Environment parsing MUST support blank lines, comment-only lines, `KEY=VALUE`, and matching single- or double-quoted values without a third-party package.
-- Unknown keys MUST be ignored so ordinary environment files remain usable. Malformed lines and invalid values for recognized keys MUST be reported.
+- Environment parsing MUST use the declared `python-dotenv` dependency and support its standard blank-line, comment, quoting, `export`, interpolation, and inline-comment behavior.
+- Unknown keys MUST be ignored so ordinary environment files remain usable. A recognized key with no value and invalid values for recognized keys MUST be reported.
 - `FORCE` MUST accept case-insensitive `true`, `false`, `1`, `0`, `yes`, and `no`.
 
 ## 4. Destination branch
@@ -106,4 +106,3 @@ Expected configuration, validation, and Git errors MUST be concise and actionabl
 - Otherwise, it MUST record the entry branch, check out `master`, and delete the entry branch only when it is not `master`.
 - The test configuration MUST permit non-interactive replacement of a previous dated destination.
 - The suite MUST establish the behavioral and safety assertions in `docs/test-plan.md`.
-

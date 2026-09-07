@@ -1,0 +1,5 @@
+automated_test/repository/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+

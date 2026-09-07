@@ -1,8 +1,8 @@
 # Technical Specification
 
-## 1. Planned layout
+## 1. Repository layout
 
-The initial implementation should remain small and dependency-free:
+The implementation remains small with explicitly declared runtime dependencies (currently `python-dotenv`):
 
 ```text
 squash_old_commits.py
@@ -29,12 +29,12 @@ Keep configuration loading, commit selection, and bucket calculation free of Git
 
 1. Parse CLI arguments while retaining whether each value was explicitly supplied.
 2. Resolve `--env-file`; otherwise use `.env` beside the script.
-3. Parse recognized keys from the file when present.
+3. Parse recognized keys from the file with `python-dotenv` when present, without mutating the process environment.
 4. Overlay explicit CLI values.
 5. Apply `FORCE=false` when absent.
 6. Validate types and ranges, then normalize the repository path with `resolve()`.
 
-Quotes delimit the entire environment value and are removed. Inline comments, variable expansion, `export KEY=...`, multiline values, and escape interpolation are not supported. This limitation must appear in CLI help.
+`python-dotenv` defines quoting, inline comments, variable expansion, `export KEY=...`, multiline values, and escape handling. The utility must not call `load_dotenv`; values are read with `dotenv_values` so process-global environment variables are not implicitly injected into configuration.
 
 ## 4. Preflight sequence
 
@@ -123,4 +123,3 @@ Differentiate these outcomes in text:
 - complete success with destination checked out.
 
 Never imply preservation of source object IDs. On success, state that the original source branch is still available for comparison or recovery.
-

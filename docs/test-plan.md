@@ -7,7 +7,7 @@ Use Python's standard-library `unittest` framework. Combine focused unit tests f
 The suite must run from the repository root with:
 
 ```text
-python -m unittest discover automated_test
+python -m unittest discover -s automated_test -p "test_*.py" -v
 ```
 
 No test may depend on the developer's global Git name, email, default branch, date format, or timezone.
@@ -87,4 +87,3 @@ git -C automated_test/repository log --all --graph --format=fuller --decorate
 ```
 
 Confirm visually that `master` retains all 30 original commits, the dated branch has reduced older density, recent commits are individually replayed, and both tips expose the same files.
-

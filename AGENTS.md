@@ -2,7 +2,9 @@
 
 ## Current phase
 
-This repository is documentation-only. Do not add production code, automated test code, executable configuration, generated fixtures, dependencies, or packaging files unless the user explicitly requests implementation.
+The documented Python utility and its standard-library test suite are implemented. Generated fixture data remains disposable and must not be committed.
+
+Do not add dependencies, packaging files, or a PowerShell implementation unless the user explicitly requests that expansion.
 
 When implementation is requested, treat these documents as the source of truth, in this order:
 
@@ -30,7 +32,7 @@ If a requested change conflicts with the documents, update the affected document
 ## Python implementation rules
 
 - Target a currently supported Python 3 release and use type annotations throughout.
-- Keep the runtime dependency-free; use the Python standard library and the `git` executable from `PATH`.
+- Dependencies are allowed when they materially improve correctness or maintainability. Declare every runtime dependency in `requirements.txt`; the current implementation uses `python-dotenv` for `.env` loading and the `git` executable from `PATH`.
 - Prefer a small set of typed data structures and pure selection functions so bucket behavior can be unit tested independently.
 - Preserve commit messages as bytes through the read/write path. Do not rebuild messages from the subject line.
 - Pass author identity and author date explicitly to `git commit-tree`; do not preserve the original committer identity or timestamp.
@@ -57,4 +59,3 @@ Before considering an implementation complete:
 - Manually inspect a generated branch with `git log --graph --format=fuller --all`.
 - Confirm merge, dirty-tree, collision, invalid-config, and checkout-failure paths are covered.
 - Report explicitly that recent SHAs change and old commit density is reduced.
-
