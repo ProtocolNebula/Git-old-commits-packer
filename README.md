@@ -1,0 +1,54 @@
+# Git Backup Packer
+
+This repository specifies a standalone Python utility that rewrites a checked-out, linear Git history onto a new branch named `squashed/YYYY_MM_DD`.
+
+The utility will keep the most recent configured number of days as individual commits. Older history will be represented by at most a configured number of commits per author-local calendar day. The source branch is never moved or deleted.
+
+> [!WARNING]
+> This is a history rewrite. Every recreated commit receives a new object ID, including recent commits that are replayed individually. Old commits that are not selected as bucket representatives are not preserved on the rewritten branch.
+
+## Repository status
+
+The repository is currently documentation-only. It intentionally contains no production script, automated test implementation, or executable `.env` files.
+
+## Planned interface
+
+```text
+python squash_old_commits.py \
+  [--env-file PATH] \
+  [--repository-path PATH] \
+  [--unsquashed-days N] \
+  [--max-commits-per-day X] \
+  [--force]
+```
+
+Configuration keys:
+
+```dotenv
+REPOSITORY_PATH=/path/to/repository
+UNSQUASHED_DAYS=14
+MAX_COMMITS_PER_DAY=2
+FORCE=false
+```
+
+Explicit command-line values take precedence over values in the selected environment file.
+
+## Preconditions
+
+The target must:
+
+- be a Git worktree with a checked-out, non-unborn branch;
+- have entirely linear history reachable from `HEAD`;
+- have no tracked or untracked changes unless `--force` is supplied;
+- have Git available on `PATH` and a usable committer identity.
+
+Always preserve or back up important refs before testing a history-rewriting tool. Review merge history before treating this utility as safe for a repository.
+
+## Documentation
+
+- [Requirements](docs/requirements.md) defines the normative behavior and acceptance criteria.
+- [Technical specification](docs/technical-specification.md) defines the interfaces, selection algorithm, data flow, and failure handling.
+- [Test plan](docs/test-plan.md) defines the mandatory reusable integration fixture and test scenarios.
+- [Safety and recovery](docs/safety-and-recovery.md) explains risks, guarantees, and recovery expectations.
+- [AGENTS.md](AGENTS.md) contains constraints for future coding agents working in this repository.
+
