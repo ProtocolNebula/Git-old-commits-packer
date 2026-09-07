@@ -21,7 +21,7 @@ Use typed records equivalent to:
 - `Config`: repository root, retention days, maximum daily density, force flag, and selected env-file path.
 - `SourceCommit`: object ID, tree ID, full message bytes, author name/email, author epoch, and author UTC offset.
 - `BucketKey`: author-local ISO date and integer slot.
-- `RewriteResult`: source/destination refs, counts, cutoff, rewritten tip, and checkout status.
+- `RewriteResult`: source/destination refs, counts, cutoff, and rewritten tip.
 
 Keep configuration loading, commit selection, and bucket calculation free of Git mutations so they can be unit tested directly.
 
@@ -100,7 +100,7 @@ Create selected commits with `git commit-tree` from oldest to newest:
 
 Do not copy signatures, merge parents, encoding headers, mergetags, or source committer fields. Record every returned object ID and abort on the first failed Git command.
 
-## 8. Publishing and checkout
+## 8. Publishing
 
 No visible ref changes occur while commits are being built.
 
@@ -108,9 +108,7 @@ No visible ref changes occur while commits are being built.
 - For a replacement, use the captured destination object ID as the expected old value.
 - Include a descriptive reflog message.
 - A compare-and-swap failure is a concurrency error; do not retry against an unreviewed new value.
-- After publication, run `git switch <destination>` without reset, clean, or discard flags.
-
-Because the selected tip uses the original tip tree, ordinary dirty changes allowed by force mode can carry across the branch switch without being discarded. If Git still refuses the switch, retain both refs and report that the destination was created but not checked out.
+- Do not run `git switch` after publication. The source branch remains checked out; switching to the destination is an explicit user or test-harness action.
 
 ## 9. Failure and output conventions
 
@@ -119,7 +117,6 @@ Use standard error for diagnostics and standard output for the final summary. Ex
 Differentiate these outcomes in text:
 
 - no ref changed because validation, confirmation, construction, or compare-and-swap failed;
-- destination ref changed but checkout failed;
-- complete success with destination checked out.
+- complete success with the source branch still checked out.
 
 Never imply preservation of source object IDs. On success, state that the original source branch is still available for comparison or recovery.

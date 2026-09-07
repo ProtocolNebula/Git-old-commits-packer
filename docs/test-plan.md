@@ -21,10 +21,10 @@ Fixture lifecycle:
 1. If the directory is absent, is not a Git worktree, or lacks local branch `master`, remove only that validated fixture path and initialize a new repository with `git init --initial-branch=master`.
 2. Configure fixture-local author and committer identity.
 3. Create 30 linear commits: three commits per calendar day at `00:00`, `08:00`, and `16:00` for ten consecutive days. Set both author and committer dates explicitly and update a tracked file with deterministic content in each commit.
-4. If a valid fixture already exists, record its entry branch, check out `master`, and delete the recorded branch only when it is not `master`.
+4. If a valid fixture already exists, record its entry branch, explicitly check out `master` before capturing any test state, and delete the recorded branch only when it is a named branch other than `master`.
 5. Capture the `master` object ID before invoking the utility.
 
-The testing configuration uses a three-day retention window, a density of two old commits per day, and `FORCE=true`. The branch-tip cutoff anchor makes assertions stable even when a fixture is reused later.
+The testing configuration should use a short retention window and positive density (the checked-in example may be adjusted for a stronger reduction). The integration assertion derives the expected destination count from the active `.env.testing` values. The branch-tip cutoff anchor makes assertions stable even when a fixture is reused later.
 
 ## 3. Unit scenarios
 
@@ -51,7 +51,7 @@ The testing configuration uses a three-day retention window, a density of two ol
 
 Run the CLI from outside the target repository using `--env-file automated_test/.env.testing`. Assert:
 
-- the process succeeds and checks out the current dated destination;
+- the process succeeds and leaves `master` checked out;
 - `master` still resolves to its captured object ID;
 - destination and source tips have different object IDs;
 - destination and source tips resolve to identical tree IDs;
@@ -75,7 +75,7 @@ Run the CLI from outside the target repository using `--env-file automated_test/
 - Reject a destination checked out in another linked worktree.
 - Simulate a destination-ref race and verify compare-and-swap failure does not overwrite the competing value.
 - Simulate commit construction failure and verify no visible ref changes.
-- Simulate checkout failure after ref publication and verify the source stays checked out, the destination exists, and the diagnostic describes the partial outcome.
+- Verify that publication does not perform a checkout and the source branch remains checked out.
 - Verify invalid repository paths, missing Git, and missing committer identity produce actionable errors without tracebacks.
 
 ## 6. Manual acceptance check

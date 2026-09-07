@@ -126,11 +126,15 @@ def recreate_fixture() -> None:
 def prepare_fixture() -> None:
     if not fixture_is_valid():
         recreate_fixture()
-        return
-    entry_branch = git(FIXTURE, "branch", "--show-current")
-    if entry_branch != "master":
+    else:
+        entry_branch = git(FIXTURE, "branch", "--show-current")
+        # Always navigate to master before the test captures its source tip.
         git(FIXTURE, "switch", "master")
-        git(FIXTURE, "branch", "-D", entry_branch)
+        if entry_branch and entry_branch != "master":
+            git(FIXTURE, "branch", "-D", entry_branch)
+    current_branch = git(FIXTURE, "branch", "--show-current")
+    if current_branch != "master":
+        raise AssertionError(f"fixture setup ended on {current_branch!r}, expected 'master'")
 
 
 class SelectionTests(unittest.TestCase):
@@ -185,10 +189,16 @@ class IntegrationTests(unittest.TestCase):
         )
 
     def test_rewrite_preserves_source_and_tree(self) -> None:
-        result = self.run_script()
+        # Explicit force makes repeated test runs non-interactive even if a user
+        # changes FORCE in .env.testing.
+        result = self.run_script("--force")
         self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
-        destination = git(FIXTURE, "branch", "--show-current")
+        destination_line = next(
+            line for line in result.stdout.decode("utf-8").splitlines() if line.startswith("Destination branch: ")
+        )
+        destination = destination_line.removeprefix("Destination branch: ").strip()
         self.assertTrue(destination.startswith("squashed/"))
+        self.assertEqual(git(FIXTURE, "branch", "--show-current"), "master")
         self.assertEqual(git(FIXTURE, "rev-parse", "master"), self.original_tip)
         self.assertNotEqual(git(FIXTURE, "rev-parse", destination), self.original_tip)
         self.assertEqual(git(FIXTURE, "rev-parse", f"{destination}^{{tree}}"), self.source_tree)
@@ -196,7 +206,12 @@ class IntegrationTests(unittest.TestCase):
         self.assertIn(b"new SHAs", result.stdout)
 
         count = int(git(FIXTURE, "rev-list", "--count", destination))
-        self.assertEqual(count, 23)
+        config = squash.load_config(["--env-file", str(ENV_FILE)])
+        source_commits = squash.read_linear_history(FIXTURE, self.original_tip)
+        selected, _, _, _ = squash.select_indices(
+            source_commits, config.unsquashed_days, config.max_commits_per_day
+        )
+        self.assertEqual(count, len(selected))
         self.assertEqual(git(FIXTURE, "rev-list", "--merges", destination), "")
 
     def test_cli_overrides_environment(self) -> None:
@@ -267,6 +282,7 @@ class IntegrationTests(unittest.TestCase):
                     "1",
                     "--max-commits-per-day",
                     "2",
+                    "--no-force",
                 ],
                 cwd=str(ROOT),
                 stdout=subprocess.PIPE,

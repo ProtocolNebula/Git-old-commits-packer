@@ -24,7 +24,7 @@ The tool therefore creates a compact historical view, not a cryptographically or
 4. Ensure the destination name is not used by an unrelated workflow or checked out in another worktree.
 5. Keep the original branch until the rewritten result has been independently inspected.
 
-Force mode is an acknowledgement mechanism. It must never run `reset`, `clean`, or an equivalent destructive checkout.
+Force mode is an acknowledgement mechanism. It must never run `reset`, `clean`, or an equivalent destructive worktree operation.
 
 ## Failure boundaries
 
@@ -32,7 +32,7 @@ Commit objects are built before a branch ref is published. If parsing or constru
 
 The only intentionally mutable ref is `refs/heads/squashed/YYYY_MM_DD`. Its update is protected by the previously observed value, preventing silent overwrite if another process changes it concurrently.
 
-Checkout happens after ref publication and cannot be part of the same atomic operation. A checkout failure can therefore leave the destination branch created while the source remains checked out. This is a safe, reportable partial result: neither ref needs to be deleted automatically.
+The utility does not check out the destination after publication. The source branch remains checked out, and switching to the new branch is an explicit user action.
 
 ## Comparing the result
 
@@ -58,4 +58,3 @@ git reflog show squashed/YYYY_MM_DD
 ```
 
 Reflog retention is not permanent, so it must not be treated as the only backup. Restoring a prior destination, deleting a destination, pushing rewritten history, or pruning objects should remain explicit user actions outside the utility.
-

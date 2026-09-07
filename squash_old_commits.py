@@ -62,13 +62,6 @@ class UserDeclined(AppError):
     pass
 
 
-class DestinationCheckoutError(AppError):
-    def __init__(self, destination: str, source: str, detail: str) -> None:
-        super().__init__(detail)
-        self.destination = destination
-        self.source = source
-
-
 @dataclass(frozen=True)
 class Config:
     repository_path: Path
@@ -462,12 +455,11 @@ def create_rewritten_commits(repository: Path, commits: Sequence[SourceCommit], 
     return rewritten
 
 
-def publish_and_checkout(
+def publish_destination(
     repository: Path,
     destination: str,
     rewritten_oid: str,
     old_destination_oid: str | None,
-    source_branch_name: str,
 ) -> None:
     object_format_name = object_format(repository)
     expected_old = old_destination_oid or ZERO_OID_BY_FORMAT[object_format_name]
@@ -482,14 +474,6 @@ def publish_and_checkout(
             "squash old commits",
         ],
     )
-    try:
-        run_git(repository, ["switch", destination])
-    except GitError as exc:
-        raise DestinationCheckoutError(
-            destination,
-            source_branch_name,
-            f"destination ref was created, but checkout failed: {exc}",
-        ) from exc
 
 
 def rewrite(config: Config) -> RewriteResult:
@@ -505,7 +489,10 @@ def rewrite(config: Config) -> RewriteResult:
     date_name = datetime.now().astimezone().strftime("%Y_%m_%d")
     destination = f"squashed/{date_name}"
     if branch == destination:
-        raise AppError("the checked-out source branch is already the destination branch")
+        raise AppError(
+            f"the checked-out branch is already {destination}; switch back to the original source branch "
+            "(for example, 'git switch master') before rerunning"
+        )
     if destination_checked_out_elsewhere(repository, destination):
         raise AppError(f"destination branch is checked out in another worktree: {destination}")
     old_destination_oid = resolve_destination(repository, destination)
@@ -518,7 +505,7 @@ def rewrite(config: Config) -> RewriteResult:
     current_source_oid = _decode(run_git(repository, ["rev-parse", f"refs/heads/{branch}"]))
     if current_source_oid != original_oid:
         raise AppError("source branch changed while commits were being constructed; no destination ref was updated")
-    publish_and_checkout(repository, destination, rewritten_oids[-1], old_destination_oid, branch)
+    publish_destination(repository, destination, rewritten_oids[-1], old_destination_oid)
     return RewriteResult(
         branch,
         destination,
@@ -543,6 +530,7 @@ def print_success(result: RewriteResult) -> None:
     print(f"Cutoff (UTC): {cutoff}")
     print(f"Original source tip retained: {result.source_oid}")
     print(f"Rewritten destination tip: {result.rewritten_oid}")
+    print(f"Source branch remains checked out: {result.source_branch}")
     print("Warning: recreated commits have new SHAs; older history was sampled into time buckets.")
 
 
@@ -554,10 +542,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(exc))
         print("No changes made.")
         return 0
-    except DestinationCheckoutError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        print(f"Source branch remains checked out: {exc.source}", file=sys.stderr)
-        return 1
     except (AppError, GitError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

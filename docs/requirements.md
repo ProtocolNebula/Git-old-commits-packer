@@ -50,7 +50,7 @@ The utility MUST expose:
 - Force mode MUST authorize destination replacement without prompting.
 - Replacement MUST be guarded against concurrent ref changes using the previously observed destination object ID.
 - The destination MUST NOT be updated if it is checked out in another linked worktree.
-- After successfully publishing the ref, the utility MUST check out the destination branch in the target worktree.
+- After successfully publishing the ref, the utility MUST leave the source branch checked out. Checking out the destination is an explicit user or test-harness action.
 
 ## 5. Commit selection
 
@@ -84,7 +84,7 @@ Cryptographic signatures and other unlisted commit headers are not preserved. Ev
 - Local branches other than the destination, tags, remote-tracking refs, remotes, and repository configuration MUST remain unchanged.
 - The utility MUST NOT push rewritten history.
 - Commit construction MAY leave unreachable objects if a later operation fails, but visible refs MUST remain unchanged until construction completes.
-- If destination publication succeeds but checkout fails, the utility MUST retain the new destination ref, leave the source checked out, return failure, and clearly report that partial outcome.
+- Destination publication has no checkout phase; a successful publication leaves the source branch checked out.
 
 ## 8. User-visible results
 

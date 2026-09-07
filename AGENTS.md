@@ -57,5 +57,5 @@ Before considering an implementation complete:
 - Ensure CLI help, environment keys, precedence, defaults, and examples agree across all documents.
 - Run the full automated suite from the repository root.
 - Manually inspect a generated branch with `git log --graph --format=fuller --all`.
-- Confirm merge, dirty-tree, collision, invalid-config, and checkout-failure paths are covered.
+- Confirm merge, dirty-tree, collision, invalid-config, and source-branch-preservation paths are covered.
 - Report explicitly that recent SHAs change and old commit density is reduced.

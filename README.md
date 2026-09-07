@@ -35,6 +35,8 @@ Explicit command-line values take precedence over values in the selected environ
 
 Copy [.env.example](.env.example) to `.env`, or pass `--env-file PATH`. Run the tests with:
 
+## Automated testing
+
 ```text
 python -m unittest discover -s automated_test -p "test_*.py" -v
 ```
@@ -45,10 +47,10 @@ For the bundled ten-day fixture, use the testing configuration to see a reductio
 git -C automated_test/repository switch master
 python squash_old_commits.py --env-file automated_test/.env.testing
 git -C automated_test/repository rev-list --count master
-git -C automated_test/repository rev-list --count HEAD
+git -C automated_test/repository branch --list "squashed/*"
 ```
 
-The expected counts are `30` for `master` and `23` for the checked-out `squashed/YYYY_MM_DD` branch. The source branch remains unchanged by design. If `UNSQUASHED_DAYS=14` is used with this ten-day fixture, all commits are within the retention window and no reduction is expected.
+`master` remains at 30 commits and stays checked out. The destination count depends on the `UNSQUASHED_DAYS` and `MAX_COMMITS_PER_DAY` values in `.env.testing` (for example, 23 with 3/2, or 13 with 1/1). If `UNSQUASHED_DAYS=14` is used with this ten-day fixture, all commits are within the retention window and no reduction is expected.
 
 ## Preconditions
 
