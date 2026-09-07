@@ -32,6 +32,16 @@ KNOWN_ENV_KEYS = {
 }
 TRUE_VALUES = {"true", "1", "yes"}
 FALSE_VALUES = {"false", "0", "no"}
+GIT_REPOSITORY_ENV_KEYS = {
+    "GIT_DIR",
+    "GIT_WORK_TREE",
+    "GIT_COMMON_DIR",
+    "GIT_INDEX_FILE",
+    "GIT_OBJECT_DIRECTORY",
+    "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    "GIT_CEILING_DIRECTORIES",
+    "GIT_DISCOVERY_ACROSS_FILESYSTEM",
+}
 AUTHOR_LINE_RE = re.compile(rb"(.*) <([^<>]*)> (-?\d+) ([+-]\d{4})$")
 ZERO_OID_BY_FORMAT = {"sha1": "0" * 40, "sha256": "0" * 64}
 
@@ -112,8 +122,10 @@ def run_git(
 ) -> bytes:
     """Run Git without a shell and raise a concise error on failure."""
 
-    command = ["git", *args]
+    command = ["git", "-c", f"safe.directory={repository}", *args]
     process_env = os.environ.copy()
+    for key in GIT_REPOSITORY_ENV_KEYS:
+        process_env.pop(key, None)
     process_env["GIT_TERMINAL_PROMPT"] = "0"
     if remove_identity_env:
         for key in list(process_env):
@@ -145,10 +157,12 @@ def run_git_optional(repository: Path, args: Sequence[str]) -> tuple[int, bytes,
     """Run Git while allowing callers to inspect a nonzero status."""
 
     process_env = os.environ.copy()
+    for key in GIT_REPOSITORY_ENV_KEYS:
+        process_env.pop(key, None)
     process_env["GIT_TERMINAL_PROMPT"] = "0"
     try:
         completed = subprocess.run(
-            ["git", *args],
+            ["git", "-c", f"safe.directory={repository}", *args],
             cwd=str(repository),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -427,10 +441,10 @@ def create_rewritten_commits(repository: Path, commits: Sequence[SourceCommit], 
     for index in selected:
         commit = commits[index]
         environment = os.environ.copy()
-        environment["GIT_TERMINAL_PROMPT"] = "0"
-        for key in list(environment):
-            if key.startswith("GIT_AUTHOR_") or key.startswith("GIT_COMMITTER_"):
+        for key in GIT_REPOSITORY_ENV_KEYS:
+            if key in environment:
                 del environment[key]
+        environment["GIT_TERMINAL_PROMPT"] = "0"
         environment.update(
             {
                 "GIT_AUTHOR_NAME": commit.author_name,

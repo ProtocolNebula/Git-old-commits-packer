@@ -23,6 +23,8 @@ import squash_old_commits as squash  # noqa: E402
 
 def git(path: Path, *args: str, input_data: bytes | None = None, check: bool = True) -> str:
     environment = os.environ.copy()
+    for key in squash.GIT_REPOSITORY_ENV_KEYS:
+        environment.pop(key, None)
     environment.update(
         {
             "GIT_AUTHOR_NAME": "Fixture Author",
@@ -33,7 +35,7 @@ def git(path: Path, *args: str, input_data: bytes | None = None, check: bool = T
         }
     )
     completed = subprocess.run(
-        ["git", *args],
+        ["git", "-c", f"safe.directory={path.resolve()}", *args],
         cwd=str(path),
         input=input_data,
         stdout=subprocess.PIPE,
@@ -49,10 +51,24 @@ def git(path: Path, *args: str, input_data: bytes | None = None, check: bool = T
 def fixture_is_valid() -> bool:
     if not FIXTURE.is_dir():
         return False
+    environment = os.environ.copy()
+    for key in squash.GIT_REPOSITORY_ENV_KEYS:
+        environment.pop(key, None)
     result = subprocess.run(
-        ["git", "-C", str(FIXTURE), "show-ref", "--verify", "--quiet", "refs/heads/master"],
+        [
+            "git",
+            "-c",
+            f"safe.directory={FIXTURE.resolve()}",
+            "-C",
+            str(FIXTURE),
+            "show-ref",
+            "--verify",
+            "--quiet",
+            "refs/heads/master",
+        ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        env=environment,
         check=False,
     )
     return result.returncode == 0
@@ -80,6 +96,8 @@ def recreate_fixture() -> None:
         git(FIXTURE, "add", "history.txt")
         date = moment.strftime("%Y-%m-%dT%H:%M:%S+0000")
         environment = os.environ.copy()
+        for key in squash.GIT_REPOSITORY_ENV_KEYS:
+            environment.pop(key, None)
         environment.update(
             {
                 "GIT_AUTHOR_NAME": "Fixture Author",
@@ -90,7 +108,19 @@ def recreate_fixture() -> None:
                 "GIT_COMMITTER_DATE": date,
             }
         )
-        subprocess.run(["git", "commit", "-m", f"fixture commit {index}"], cwd=FIXTURE, env=environment, check=True)
+        subprocess.run(
+            [
+                "git",
+                "-c",
+                f"safe.directory={FIXTURE.resolve()}",
+                "commit",
+                "-m",
+                f"fixture commit {index}",
+            ],
+            cwd=FIXTURE,
+            env=environment,
+            check=True,
+        )
 
 
 def prepare_fixture() -> None:
