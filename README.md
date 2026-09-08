@@ -143,6 +143,24 @@ git update-ref refs/heads/squashed/YYYY_MM_DD <new-tip> <expected-old-tip> -m "s
 
 For a new destination, `<expected-old-tip>` is all zeroes. For replacement, it is the destination SHA observed before construction. The source branch remains checked out and unchanged; the script does not switch to the destination.
 
+## Progress and timing
+
+Long operations print simple progress lines such as:
+
+```text
+Progress: source commits detected: 127106; cursor 0/127106
+Progress: source commits loaded: 127106/127106; cursor abc123...
+Progress: recreating commits: 328/7854; source cursor 64000/127106 (def456...)
+```
+
+These are periodic status markers, not a live progress bar. Every normal completion also prints:
+
+```text
+Start time: 2026-09-09T14:30:00+02:00
+End time: 2026-09-09T14:31:12+02:00
+Elapsed time: 72.481 seconds
+```
+
 ## Preconditions
 
 The target must:

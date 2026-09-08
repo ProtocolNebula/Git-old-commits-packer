@@ -122,6 +122,8 @@ No visible ref changes occur while commits are being built.
 
 Use standard error for diagnostics and standard output for the final summary. Expected failures should have a nonzero exit status and one leading `error:` message followed, when useful, by a safe remediation.
 
+During long-running history loading and commit creation, print lightweight progress markers containing a total and current cursor. Progress updates MAY be periodic rather than real-time. Every normal completion, including a successful no-op finish rule, reports local start time, local end time, and elapsed monotonic duration.
+
 Differentiate these outcomes in text:
 
 - no ref changed because validation, confirmation, construction, or compare-and-swap failed;

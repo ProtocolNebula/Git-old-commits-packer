@@ -13,10 +13,11 @@ import os
 import re
 import subprocess
 import sys
+import time
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Mapping, Sequence
+from typing import Mapping, Sequence, TextIO
 
 try:
     from dotenv import dotenv_values
@@ -45,6 +46,7 @@ GIT_REPOSITORY_ENV_KEYS = {
 }
 AUTHOR_LINE_RE = re.compile(rb"(.*) <([^<>]*)> (-?\d+) ([+-]\d{4})$")
 ZERO_OID_BY_FORMAT = {"sha1": "0" * 40, "sha256": "0" * 64}
+PROGRESS_INTERVAL_SECONDS = 2.0
 
 
 class AppError(Exception):
@@ -383,6 +385,7 @@ def read_commits_batch(repository: Path, oids: Sequence[str]) -> list[SourceComm
 
 
 def read_linear_history(repository: Path, source_oid: str) -> list[SourceCommit]:
+    print("Progress: discovering source commits...", flush=True)
     raw = run_git(repository, ["rev-list", "--reverse", "--parents", source_oid])
     oids: list[str] = []
     for line in raw.splitlines():
@@ -394,7 +397,11 @@ def read_linear_history(repository: Path, source_oid: str) -> list[SourceCommit]
         oids.append(pieces[0].decode("ascii"))
     if not oids:
         raise AppError("checked-out branch has no commits")
-    return read_commits_batch(repository, oids)
+    print(f"Progress: source commits detected: {len(oids)}; cursor 0/{len(oids)}", flush=True)
+    commits = read_commits_batch(repository, oids)
+    cursor = commits[-1].oid[:12] if commits else "none"
+    print(f"Progress: source commits loaded: {len(commits)}/{len(oids)}; cursor {cursor}", flush=True)
+    return commits
 
 
 def parse_offset_minutes(offset: str) -> int:
@@ -613,7 +620,10 @@ def create_rewritten_commits(
 ) -> list[str]:
     rewritten: list[str] = []
     parent = base_parent
-    for index in selected:
+    total = len(selected)
+    last_report = time.monotonic()
+    print(f"Progress: recreating commits: 0/{total}; source cursor 0/{len(commits)}", flush=True)
+    for position, index in enumerate(selected, start=1):
         commit = commits[index]
         environment = os.environ.copy()
         for key in GIT_REPOSITORY_ENV_KEYS:
@@ -635,6 +645,14 @@ def create_rewritten_commits(
             raise GitError("git commit-tree returned an empty object ID")
         rewritten.append(oid)
         parent = oid
+        now = time.monotonic()
+        if now - last_report >= PROGRESS_INTERVAL_SECONDS or position == total:
+            print(
+                f"Progress: recreating commits: {position}/{total}; "
+                f"source cursor {index + 1}/{len(commits)} ({commit.oid[:12]})",
+                flush=True,
+            )
+            last_report = now
     return rewritten
 
 
@@ -735,22 +753,36 @@ def print_success(result: RewriteResult) -> None:
     print("Warning: recreated commits have new SHAs; older history was sampled into time buckets.")
 
 
+def print_timing(started_at: datetime, started_monotonic: float, stream: TextIO = sys.stdout) -> None:
+    finished_at = datetime.now().astimezone()
+    elapsed = max(0.0, time.monotonic() - started_monotonic)
+    print(f"Start time: {started_at.isoformat(timespec='seconds')}", file=stream)
+    print(f"End time: {finished_at.isoformat(timespec='seconds')}", file=stream)
+    print(f"Elapsed time: {elapsed:.3f} seconds", file=stream)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
+    started_at = datetime.now().astimezone()
+    started_monotonic = time.monotonic()
     try:
         config = load_config(argv)
         result = rewrite(config)
     except UserDeclined as exc:
         print(str(exc))
         print("No changes made.")
+        print_timing(started_at, started_monotonic)
         return 0
     except AlreadyCompressedHistory as exc:
         print(f"Finish rule: {exc}")
         print("No changes made.")
+        print_timing(started_at, started_monotonic)
         return 0
     except (AppError, GitError) as exc:
         print(f"error: {exc}", file=sys.stderr)
+        print_timing(started_at, started_monotonic, sys.stderr)
         return 1
     print_success(result)
+    print_timing(started_at, started_monotonic)
     return 0
 
 

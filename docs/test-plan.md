@@ -66,6 +66,7 @@ Run the CLI from outside the target repository using `--env-file automated_test/
 - recreated messages, author names/emails, author epochs, and author offsets match their selected sources;
 - recreated committer metadata is not asserted equal to source committer metadata;
 - output contains counts, cutoff, both branch names, and the SHA-change/history-sampling warning.
+- output contains progress totals/cursors and start, end, and elapsed timing fields.
 
 ## 5. Safety and failure scenarios
 

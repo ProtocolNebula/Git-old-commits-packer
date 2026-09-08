@@ -102,6 +102,8 @@ On rewrite success, output MUST include:
 - cutoff instant;
 - confirmation that the source ref was retained;
 - a warning that all recreated SHAs differ and older commits were sampled.
+- start time, end time, and elapsed time.
+- lightweight progress markers showing the detected total and current history/recreation cursor; these markers need not be real-time.
 
 When an already-compressed prefix is retained, output MUST also identify the finish-rule boundary and the number of existing prefix commits retained without recreation.
 

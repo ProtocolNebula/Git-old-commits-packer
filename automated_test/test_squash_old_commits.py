@@ -249,6 +249,14 @@ class IntegrationTests(unittest.TestCase):
         self.assertEqual(git(FIXTURE, "rev-parse", f"{destination}^{{tree}}"), self.source_tree)
         self.assertIn(b"Original source tip retained", result.stdout)
         self.assertIn(b"new SHAs", result.stdout)
+        for marker in (
+            b"Progress: source commits detected",
+            b"Progress: recreating commits",
+            b"Start time:",
+            b"End time:",
+            b"Elapsed time:",
+        ):
+            self.assertIn(marker, result.stdout)
 
         count = int(git(FIXTURE, "rev-list", "--count", destination))
         config = squash.load_config(["--env-file", str(ENV_FILE)])
