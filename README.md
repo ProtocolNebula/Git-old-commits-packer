@@ -56,6 +56,91 @@ git -C automated_test/repository branch --list "squashed/*"
 
 When more than seven consecutive older dates already contain at most `MAX_COMMITS_PER_DAY` commits, the utility applies its finish rule while scanning newest-to-oldest: it stops recompressing at that existing prefix, retains it unchanged, and processes only newer commits. If there are no newer commits, it exits successfully without creating a destination ref. Pass `--force-recheck-all` (or set `FORCE_RECHECK_ALL=true`) to recheck the full history.
 
+## Git flow
+
+The utility does not use `git rebase`, `git merge`, or `git cherry-pick`. It reads the source commits, creates replacement commits with `git commit-tree`, and publishes the result as a new branch.
+
+Reference invocation:
+
+```text
+python squash_old_commits.py --env-file automated_test/.env.testing --force
+```
+
+The flow is:
+
+```text
+checked-out source branch
+        |
+        v
+validate repository and linear history
+        |
+        v
+read commits and select representatives
+        |
+        v
+create replacement commits with commit-tree
+        |
+        v
+verify the source branch did not move
+        |
+        v
+publish squashed/YYYY_MM_DD
+```
+
+Git is invoked with `-c safe.directory=<repository>` and an explicit repository working directory. The caller's working directory is not changed.
+
+### Validation and reading
+
+The main validation commands are:
+
+```text
+git rev-parse --show-toplevel
+git symbolic-ref --quiet --short HEAD
+git rev-parse --verify HEAD^{commit}
+git status --porcelain=v1 -z --untracked-files=all
+git var GIT_COMMITTER_IDENT
+```
+
+The source history is read with:
+
+```text
+git rev-list --reverse --parents <source-tip>
+git cat-file commit <commit-id>
+```
+
+The script checks for merge commits and retains each selected commit's tree, complete message, author identity, author timestamp, and author offset.
+
+### Selection and recreation
+
+Selection is performed in Python. Recent commits are replayed individually. Older commits are grouped by author-local date and time buckets; the last commit in each occupied bucket is selected.
+
+The scan runs newest-to-oldest. When it finds more than seven adjacent dates already at or below `MAX_COMMITS_PER_DAY`, that older prefix is retained without recreation. Only commits newer than the boundary are recreated. `--force-recheck-all` disables this prefix-reuse rule.
+
+Each recreated commit is made with:
+
+```text
+git commit-tree <tree-id> [-p <parent-id>]
+```
+
+The complete source message is sent through standard input. Author values are supplied through `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, and `GIT_AUTHOR_DATE`; Git generates new committer metadata. Therefore recreated commits have new SHAs.
+
+### Publication
+
+Before publishing, the script verifies the source ref again:
+
+```text
+git rev-parse refs/heads/<source-branch>
+```
+
+The destination is updated atomically with compare-and-swap:
+
+```text
+git rev-parse --show-object-format
+git update-ref refs/heads/squashed/YYYY_MM_DD <new-tip> <expected-old-tip> -m "squash old commits"
+```
+
+For a new destination, `<expected-old-tip>` is all zeroes. For replacement, it is the destination SHA observed before construction. The source branch remains checked out and unchanged; the script does not switch to the destination.
+
 ## Preconditions
 
 The target must:
