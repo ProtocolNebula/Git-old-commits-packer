@@ -18,7 +18,7 @@ If a requested change conflicts with the documents, update the affected document
 ## Non-negotiable safety rules
 
 - Never describe rewritten commits as preserving their original SHA or signature.
-- Never claim that all old commits are preserved. Only the selected representative of each occupied old-history bucket is recreated.
+- Never claim that all old commits are preserved. Older dates are bucketed unless they are already compressed (at most the configured density), in which case their existing commits may be preserved; after the seven-day boundary, the compressed source prefix is retained without recreation.
 - Validate the full history reachable from `HEAD` for merge commits before presenting the rewrite as safe.
 - Do not move, delete, rename, or force-update the source branch.
 - Do not alter tags or remote-tracking refs.

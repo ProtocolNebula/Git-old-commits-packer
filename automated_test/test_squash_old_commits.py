@@ -147,11 +147,21 @@ class SelectionTests(unittest.TestCase):
     def test_cutoff_and_last_bucket_representative(self) -> None:
         start = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp())
         commits = self.make_commits([start + 8 * 3600 * index for index in range(6)])
-        selected, cutoff, recent, old = squash.select_indices(commits, 1, 2)
+        selected, cutoff, recent, old = squash.select_indices(commits, 1, 1)
         self.assertEqual(cutoff, commits[-1].author_epoch - 86400)
         self.assertEqual(selected, [1, 2, 3, 4, 5])
         self.assertEqual(recent, 4)
         self.assertEqual(old, 1)
+
+    def test_more_than_seven_compressed_days_retains_existing_prefix(self) -> None:
+        start = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp())
+        commits = self.make_commits([start + 86400 * index for index in range(9)])
+        selected, _, _, old = squash.select_indices(commits, 0, 1)
+        self.assertEqual(selected, [8])
+        self.assertEqual(old, 0)
+        selected, _, _, old = squash.select_indices(commits, 0, 1, force_recheck_all=True)
+        self.assertEqual(selected, list(range(9)))
+        self.assertEqual(old, 8)
 
     def test_non_divisor_density_stays_bounded(self) -> None:
         start = int(datetime(2020, 1, 1, tzinfo=timezone.utc).timestamp())
@@ -213,6 +223,46 @@ class IntegrationTests(unittest.TestCase):
         )
         self.assertEqual(count, len(selected))
         self.assertEqual(git(FIXTURE, "rev-list", "--merges", destination), "")
+
+    def test_recompressed_history_stops_by_density(self) -> None:
+        git(FIXTURE, "switch", "master")
+        created = self.run_script("--force")
+        self.assertEqual(created.returncode, 0, created.stderr.decode(errors="replace"))
+        destination = next(
+            line.removeprefix("Destination branch: ").strip()
+            for line in created.stdout.decode("utf-8").splitlines()
+            if line.startswith("Destination branch: ")
+        )
+        git(FIXTURE, "switch", destination)
+        git(FIXTURE, "branch", "-m", "renamed-source")
+        try:
+            source_tip = git(FIXTURE, "rev-parse", "renamed-source")
+            source_count = int(git(FIXTURE, "rev-list", "--count", "renamed-source"))
+            result = self.run_script("--no-force")
+            self.assertEqual(result.returncode, 0, result.stderr.decode(errors="replace"))
+            self.assertIn(b"Finish rule:", result.stdout)
+            self.assertNotIn(b"error:", result.stderr)
+            self.assertEqual(git(FIXTURE, "branch", "--show-current"), "renamed-source")
+            self.assertEqual(git(FIXTURE, "rev-parse", "renamed-source"), source_tip)
+            self.assertIn(b"Existing compressed prefix retained:", result.stdout)
+            new_destination = next(
+                line.removeprefix("Destination branch: ").strip()
+                for line in result.stdout.decode("utf-8").splitlines()
+                if line.startswith("Destination branch: ")
+            )
+            destination_count = int(git(FIXTURE, "rev-list", "--count", new_destination))
+            self.assertEqual(destination_count, source_count)
+            recreated = int(
+                next(
+                    line.removeprefix("Recreated commits: ").strip()
+                    for line in result.stdout.decode("utf-8").splitlines()
+                    if line.startswith("Recreated commits: ")
+                )
+            )
+            self.assertLess(recreated, source_count)
+        finally:
+            git(FIXTURE, "switch", "master")
+            git(FIXTURE, "branch", "-D", "renamed-source")
 
     def test_cli_overrides_environment(self) -> None:
         with TemporaryDirectory() as temporary:

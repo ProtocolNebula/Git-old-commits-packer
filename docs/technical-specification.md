@@ -18,7 +18,7 @@ Production behavior belongs in the single top-level script. Selection and parsin
 
 Use typed records equivalent to:
 
-- `Config`: repository root, retention days, maximum daily density, force flag, and selected env-file path.
+- `Config`: repository root, retention days, maximum daily density, force flags, and selected env-file path.
 - `SourceCommit`: object ID, tree ID, full message bytes, author name/email, author epoch, and author UTC offset.
 - `BucketKey`: author-local ISO date and integer slot.
 - `RewriteResult`: source/destination refs, counts, cutoff, and rewritten tip.
@@ -31,7 +31,7 @@ Keep configuration loading, commit selection, and bucket calculation free of Git
 2. Resolve `--env-file`; otherwise use `.env` beside the script.
 3. Parse recognized keys from the file with `python-dotenv` when present, without mutating the process environment.
 4. Overlay explicit CLI values.
-5. Apply `FORCE=false` when absent.
+5. Apply `FORCE=false` and `FORCE_RECHECK_ALL=false` when absent.
 6. Validate types and ranges, then normalize the repository path with `resolve()`.
 
 `python-dotenv` defines quoting, inline comments, variable expansion, `export KEY=...`, multiline values, and escape handling. The utility must not call `load_dotenv`; values are read with `dotenv_values` so process-global environment variables are not implicitly injected into configuration.
@@ -69,7 +69,11 @@ Let `tip_epoch` be the author epoch of the final source commit:
 cutoff_epoch = tip_epoch - unsquashed_days * 86400
 ```
 
-For an old commit, convert its author epoch using that commit's recorded fixed UTC offset. Let `seconds` be the resulting wall-clock seconds since local midnight, in the inclusive range `0..86399`. Calculate:
+For an old commit, convert its author epoch using that commit's recorded fixed UTC offset. First group old commits by author-local calendar date. A date with at most `max_commits_per_day` old commits is already compressed: preserve every commit on that date and do not bucket it again.
+
+Scan dates newest-to-oldest. When the first run longer than seven already-compressed dates is found, use the run's newest date as the boundary. Retain the source commit chain through that date unchanged and do not re-compress it; only commits newer than the retained prefix are selected for rewriting. Recent commits at or after the cutoff are excluded from this check. When `force_recheck_all` is true, do not retain a prefix and continue while preserving already-compressed dates through normal recreation.
+
+For each remaining old commit, let `seconds` be the author-local wall-clock seconds since local midnight, in the inclusive range `0..86399`. Calculate:
 
 ```text
 slot = floor(seconds * max_commits_per_day / 86400)
@@ -81,8 +85,10 @@ This supports any positive density, not only divisors of 24. Clamp the calculate
 Walk commits oldest first:
 
 - add every index with `author_epoch >= cutoff_epoch` to the selected-index set;
-- for every older commit, assign `last_old_index[bucket] = index`, replacing an earlier representative;
+- add every old commit on an already-compressed date to the selected-index set;
+- for every other older commit, assign `last_old_index[bucket] = index`, replacing an earlier representative;
 - add all final bucket representative indices to the set;
+- when a retained prefix exists, remove every selected index at or before its boundary index;
 - sort selected indices numerically before recreation.
 
 Selection is based on timestamps, but ordering is always based on the commit graph. Non-monotonic author dates therefore do not reorder commits or exceed one representative per occupied bucket.
@@ -92,7 +98,7 @@ Selection is based on timestamps, but ordering is always based on the commit gra
 Create selected commits with `git commit-tree` from oldest to newest:
 
 1. Use the selected source tree unchanged.
-2. Supply `-p <rewritten_parent>` except for the first selected commit.
+2. Supply `-p <rewritten_parent>`; for the first selected commit this is the retained source boundary commit when a prefix exists, otherwise there is no parent.
 3. Send the complete source message through standard input as bytes.
 4. Set `GIT_AUTHOR_NAME`, `GIT_AUTHOR_EMAIL`, and `GIT_AUTHOR_DATE` from the source author. Use a date form containing both epoch and original numeric offset.
 5. Remove all inherited `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables before adding the intended author values.
@@ -117,6 +123,9 @@ Use standard error for diagnostics and standard output for the final summary. Ex
 Differentiate these outcomes in text:
 
 - no ref changed because validation, confirmation, construction, or compare-and-swap failed;
+- no ref changed because the already-compressed-date finish rule stopped the run (this is a successful exit, not an error);
 - complete success with the source branch still checked out.
+
+When a retained prefix is used, the successful summary reports its boundary date and count. If the source contains no commits newer than that boundary, the finish rule returns exit status 0 without creating a destination ref.
 
 Never imply preservation of source object IDs. On success, state that the original source branch is still available for comparison or recovery.

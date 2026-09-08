@@ -34,6 +34,7 @@ The testing configuration should use a short retention window and positive densi
 - Override each file value from the command line.
 - Resolve file and CLI repository paths from their specified bases.
 - Accept supported boolean spellings and reject other values.
+- Load and override `FORCE_RECHECK_ALL` from the environment file and CLI.
 - Reject missing required keys, negative retention, zero/negative density, malformed recognized lines, and an explicitly missing env file.
 - Ignore unrelated environment keys.
 
@@ -46,6 +47,8 @@ The testing configuration should use a short retention window and positive densi
 - Respect each commit's recorded offset at local-date boundaries.
 - Preserve graph ordering when author dates are non-monotonic.
 - Always select the tip when retention is zero.
+- Preserve all commits on an old date already containing at most `X` commits.
+- Scan newest-to-oldest and retain an existing prefix when eight adjacent old dates are already compressed; rewrite newer commits and continue with the override.
 
 ## 4. Primary integration scenario
 
@@ -58,7 +61,7 @@ Run the CLI from outside the target repository using `--env-file automated_test/
 - the destination history is linear;
 - every recent source commit has a corresponding recreated commit in graph order;
 - old history has at most two selected commits per author-local day;
-- each old selected commit corresponds to the final source commit in its occupied slot;
+- each bucketed old selected commit corresponds to the final source commit in its occupied slot, while already-compressed dates retain their existing commits;
 - recreated messages, author names/emails, author epochs, and author offsets match their selected sources;
 - recreated committer metadata is not asserted equal to source committer metadata;
 - output contains counts, cutoff, both branch names, and the SHA-change/history-sampling warning.
@@ -71,7 +74,9 @@ Run the CLI from outside the target repository using `--env-file automated_test/
 - With force, complete the rewrite while preserving dirty file contents and index state.
 - When the destination exists, verify `n`, blank input, and EOF leave its ref unchanged; verify `y` replaces it.
 - Verify force replaces an existing destination without reading stdin.
-- Reject when the source branch already has the destination name.
+- Allow a renamed branch containing already-compressed days; branch names are not used to detect prior compression.
+- Reject a source branch whose name equals the generated destination, without moving that source ref.
+- Report the seven-day finish-rule boundary and retained-prefix count on standard output; if no newer commits exist, exit 0 with no ref changes.
 - Reject a destination checked out in another linked worktree.
 - Simulate a destination-ref race and verify compare-and-swap failure does not overwrite the competing value.
 - Simulate commit construction failure and verify no visible ref changes.

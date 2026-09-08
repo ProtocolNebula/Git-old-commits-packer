@@ -5,7 +5,7 @@ This repository specifies a standalone Python utility that rewrites a checked-ou
 The utility will keep the most recent configured number of days as individual commits. Older history will be represented by at most a configured number of commits per author-local calendar day. The source branch is never moved or deleted.
 
 > [!WARNING]
-> This is a history rewrite. Every recreated commit receives a new object ID, including recent commits that are replayed individually. Old commits that are not selected as bucket representatives are not preserved on the rewritten branch.
+> This is a history rewrite. Every recreated commit receives a new object ID, including recent commits that are replayed individually. Older dates are bucketed unless they are already compressed at the configured density; commits omitted by that selection are not preserved on the rewritten branch.
 
 ## Repository status
 
@@ -19,7 +19,8 @@ python squash_old_commits.py \
   [--repository-path PATH] \
   [--unsquashed-days N] \
   [--max-commits-per-day X] \
-  [--force | --no-force]
+  [--force | --no-force] \
+  [--force-recheck-all | --no-force-recheck-all]
 ```
 
 Configuration keys:
@@ -29,6 +30,7 @@ REPOSITORY_PATH=/path/to/repository
 UNSQUASHED_DAYS=14
 MAX_COMMITS_PER_DAY=2
 FORCE=false
+FORCE_RECHECK_ALL=false
 ```
 
 Explicit command-line values take precedence over values in the selected environment file. Install runtime dependencies with `python -m pip install -r requirements.txt`.
@@ -51,6 +53,8 @@ git -C automated_test/repository branch --list "squashed/*"
 ```
 
 `master` remains at 30 commits and stays checked out. The destination count depends on the `UNSQUASHED_DAYS` and `MAX_COMMITS_PER_DAY` values in `.env.testing` (for example, 23 with 3/2, or 13 with 1/1). If `UNSQUASHED_DAYS=14` is used with this ten-day fixture, all commits are within the retention window and no reduction is expected.
+
+When more than seven consecutive older dates already contain at most `MAX_COMMITS_PER_DAY` commits, the utility applies its finish rule while scanning newest-to-oldest: it stops recompressing at that existing prefix, retains it unchanged, and processes only newer commits. If there are no newer commits, it exits successfully without creating a destination ref. Pass `--force-recheck-all` (or set `FORCE_RECHECK_ALL=true`) to recheck the full history.
 
 ## Preconditions
 

@@ -29,6 +29,7 @@ KNOWN_ENV_KEYS = {
     "UNSQUASHED_DAYS",
     "MAX_COMMITS_PER_DAY",
     "FORCE",
+    "FORCE_RECHECK_ALL",
 }
 TRUE_VALUES = {"true", "1", "yes"}
 FALSE_VALUES = {"false", "0", "no"}
@@ -62,12 +63,17 @@ class UserDeclined(AppError):
     pass
 
 
+class AlreadyCompressedHistory(AppError):
+    """Normal finish: no newer commits require a rewrite."""
+
+
 @dataclass(frozen=True)
 class Config:
     repository_path: Path
     unsquashed_days: int
     max_commits_per_day: int
     force: bool
+    force_recheck_all: bool
     env_file: Path
 
 
@@ -99,6 +105,8 @@ class RewriteResult:
     recent_count: int
     old_representative_count: int
     cutoff_epoch: int
+    preserved_prefix_count: int = 0
+    finish_rule_date: str | None = None
 
 
 def _decode(data: bytes) -> str:
@@ -234,6 +242,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="allow dirty worktrees and replace an existing destination (use --no-force to override .env)",
     )
+    parser.add_argument(
+        "--force-recheck-all",
+        action=argparse.BooleanOptionalAction,
+        default=None,
+        help="allow processing histories with more than seven consecutive already-compressed days",
+    )
     return parser
 
 
@@ -283,7 +297,13 @@ def load_config(argv: Sequence[str] | None = None) -> Config:
         force = parse_bool(file_values["FORCE"], "FORCE")
     else:
         force = False
-    return Config(repository_path, days, density, force, env_file)
+    if namespace.force_recheck_all is not None:
+        force_recheck_all = bool(namespace.force_recheck_all)
+    elif "FORCE_RECHECK_ALL" in file_values:
+        force_recheck_all = parse_bool(file_values["FORCE_RECHECK_ALL"], "FORCE_RECHECK_ALL")
+    else:
+        force_recheck_all = False
+    return Config(repository_path, days, density, force, force_recheck_all, env_file)
 
 
 def parse_author_line(value: bytes) -> tuple[str, str, int, str]:
@@ -336,30 +356,131 @@ def parse_offset_minutes(offset: str) -> int:
 
 
 def bucket_for(commit: SourceCommit, max_commits_per_day: int) -> BucketKey:
-    offset = timezone(timedelta(minutes=parse_offset_minutes(commit.author_offset)))
-    local = datetime.fromtimestamp(commit.author_epoch, tz=offset)
+    local = author_local_datetime(commit)
     seconds = local.hour * 3600 + local.minute * 60 + local.second
     slot = min(max_commits_per_day - 1, seconds * max_commits_per_day // 86400)
     return BucketKey(local.date().isoformat(), slot)
 
 
+def author_local_datetime(commit: SourceCommit) -> datetime:
+    offset = timezone(timedelta(minutes=parse_offset_minutes(commit.author_offset)))
+    return datetime.fromtimestamp(commit.author_epoch, tz=offset)
+
+
+def already_compressed_dates(
+    commits: Sequence[SourceCommit], cutoff: int, max_commits_per_day: int
+) -> set[str]:
+    counts: dict[str, int] = {}
+    for commit in commits:
+        if commit.author_epoch < cutoff:
+            date = author_local_datetime(commit).date().isoformat()
+            counts[date] = counts.get(date, 0) + 1
+    return {date for date, count in counts.items() if count <= max_commits_per_day}
+
+
+def longest_consecutive_date_run(dates: set[str]) -> tuple[int, str | None, str | None]:
+    if not dates:
+        return 0, None, None
+    ordered = sorted(datetime.strptime(value, "%Y-%m-%d").date() for value in dates)
+    longest = 1
+    longest_start = ordered[0]
+    longest_end = ordered[0]
+    run_start = ordered[0]
+    for previous, current in zip(ordered, ordered[1:]):
+        if current == previous + timedelta(days=1):
+            continue
+        if previous - run_start + timedelta(days=1) > longest_end - longest_start + timedelta(days=1):
+            longest = (previous - run_start).days + 1
+            longest_start, longest_end = run_start, previous
+        run_start = current
+    final_length = (ordered[-1] - run_start).days + 1
+    if final_length > longest:
+        longest = final_length
+        longest_start, longest_end = run_start, ordered[-1]
+    return longest, longest_start.isoformat(), longest_end.isoformat()
+
+
+def recompression_boundary(
+    commits: Sequence[SourceCommit], cutoff: int, max_commits_per_day: int, force_recheck_all: bool
+) -> tuple[int | None, str | None]:
+    """Return the source index through which an existing compressed prefix is retained.
+
+    Dates are inspected newest-first.  Once eight adjacent old dates are already at
+    or below the target density, the newest date in that run is the boundary: all
+    source commits on that date and earlier are already compressed and can remain
+    as the destination's unchanged parent chain.
+    """
+
+    if force_recheck_all:
+        return None, None
+    compressed_dates = already_compressed_dates(commits, cutoff, max_commits_per_day)
+    if not compressed_dates:
+        return None, None
+    ordered = sorted(
+        (datetime.strptime(value, "%Y-%m-%d").date() for value in compressed_dates),
+        reverse=True,
+    )
+    run_newest = ordered[0]
+    run_length = 1
+    previous = ordered[0]
+    for current in ordered[1:]:
+        if previous - current == timedelta(days=1):
+            run_length += 1
+        else:
+            run_newest = current
+            run_length = 1
+        if run_length > 7:
+            boundary_date = run_newest.isoformat()
+            candidates = [
+                index
+                for index, commit in enumerate(commits)
+                if commit.author_epoch < cutoff
+                and author_local_datetime(commit).date().isoformat() <= boundary_date
+            ]
+            if candidates:
+                return max(candidates), boundary_date
+            return None, boundary_date
+        previous = current
+    return None, None
+
+
 def select_indices(
-    commits: Sequence[SourceCommit], unsquashed_days: int, max_commits_per_day: int
+    commits: Sequence[SourceCommit],
+    unsquashed_days: int,
+    max_commits_per_day: int,
+    force_recheck_all: bool = False,
 ) -> tuple[list[int], int, int, int]:
     if not commits:
         raise ValueError("at least one commit is required")
     cutoff = commits[-1].author_epoch - unsquashed_days * 86400
     selected: set[int] = set()
     last_old_by_bucket: dict[BucketKey, int] = {}
+    old_indices_by_date: dict[str, list[int]] = {}
     recent_count = 0
     for index, commit in enumerate(commits):
         if commit.author_epoch >= cutoff:
             selected.add(index)
             recent_count += 1
         else:
-            last_old_by_bucket[bucket_for(commit, max_commits_per_day)] = index
+            date = author_local_datetime(commit).date().isoformat()
+            old_indices_by_date.setdefault(date, []).append(index)
+
+    preserved_prefix_index, _ = recompression_boundary(
+        commits, cutoff, max_commits_per_day, force_recheck_all
+    )
+    compressed_dates = already_compressed_dates(commits, cutoff, max_commits_per_day)
+
+    for date, indices in old_indices_by_date.items():
+        if date in compressed_dates:
+            selected.update(indices)
+            continue
+        for index in indices:
+            last_old_by_bucket[bucket_for(commits[index], max_commits_per_day)] = index
     selected.update(last_old_by_bucket.values())
-    return sorted(selected), cutoff, recent_count, len(last_old_by_bucket)
+    if preserved_prefix_index is not None:
+        selected = {index for index in selected if index > preserved_prefix_index}
+    old_selected_count = sum(1 for index in selected if commits[index].author_epoch < cutoff)
+    return sorted(selected), cutoff, recent_count, old_selected_count
 
 
 def source_branch(repository: Path) -> str:
@@ -401,7 +522,15 @@ def ensure_committer_identity(repository: Path) -> None:
 
 def destination_checked_out_elsewhere(repository: Path, destination: str) -> bool:
     output = run_git(repository, ["worktree", "list", "--porcelain"]).decode("utf-8", errors="replace")
-    return any(line.strip() == f"branch refs/heads/{destination}" for line in output.splitlines())
+    current_worktree: Path | None = None
+    current_repository = repository.resolve()
+    for line in output.splitlines():
+        if line.startswith("worktree "):
+            current_worktree = Path(line[9:]).resolve()
+        elif line.strip() == f"branch refs/heads/{destination}":
+            if current_worktree is not None and current_worktree != current_repository:
+                return True
+    return False
 
 
 def resolve_destination(repository: Path, destination: str) -> str | None:
@@ -429,8 +558,14 @@ def object_format(repository: Path) -> str:
     return value
 
 
-def create_rewritten_commits(repository: Path, commits: Sequence[SourceCommit], selected: Sequence[int]) -> list[str]:
+def create_rewritten_commits(
+    repository: Path,
+    commits: Sequence[SourceCommit],
+    selected: Sequence[int],
+    base_parent: str | None = None,
+) -> list[str]:
     rewritten: list[str] = []
+    parent = base_parent
     for index in selected:
         commit = commits[index]
         environment = os.environ.copy()
@@ -446,12 +581,13 @@ def create_rewritten_commits(repository: Path, commits: Sequence[SourceCommit], 
             }
         )
         args = ["commit-tree", commit.tree]
-        if rewritten:
-            args.extend(["-p", rewritten[-1]])
+        if parent is not None:
+            args.extend(["-p", parent])
         oid = _decode(run_git(repository, args, input_data=commit.message, env=environment))
         if not oid:
             raise GitError("git commit-tree returned an empty object ID")
         rewritten.append(oid)
+        parent = oid
     return rewritten
 
 
@@ -483,15 +619,23 @@ def rewrite(config: Config) -> RewriteResult:
     ensure_clean(repository, config.force)
     ensure_committer_identity(repository)
     commits = read_linear_history(repository, original_oid)
+    cutoff = commits[-1].author_epoch - config.unsquashed_days * 86400
+    preserved_prefix_index, finish_rule_date = recompression_boundary(
+        commits, cutoff, config.max_commits_per_day, config.force_recheck_all
+    )
     selected, cutoff, recent_count, old_count = select_indices(
-        commits, config.unsquashed_days, config.max_commits_per_day
+        commits, config.unsquashed_days, config.max_commits_per_day, config.force_recheck_all
+    )
+    if not selected and preserved_prefix_index is not None:
+        raise AlreadyCompressedHistory(
+            "finish rule reached already-compressed history "
+            f"through {finish_rule_date}; no newer commits require rewriting"
     )
     date_name = datetime.now().astimezone().strftime("%Y_%m_%d")
     destination = f"squashed/{date_name}"
-    if branch == destination:
+    if destination == branch:
         raise AppError(
-            f"the checked-out branch is already {destination}; switch back to the original source branch "
-            "(for example, 'git switch master') before rerunning"
+            "destination branch is the checked-out source branch; rename or switch the source branch before rerunning"
         )
     if destination_checked_out_elsewhere(repository, destination):
         raise AppError(f"destination branch is checked out in another worktree: {destination}")
@@ -499,7 +643,8 @@ def rewrite(config: Config) -> RewriteResult:
     if old_destination_oid is not None:
         confirm_replacement(destination, config.force)
 
-    rewritten_oids = create_rewritten_commits(repository, commits, selected)
+    base_parent = commits[preserved_prefix_index].oid if preserved_prefix_index is not None else None
+    rewritten_oids = create_rewritten_commits(repository, commits, selected, base_parent)
     if not rewritten_oids:
         raise AppError("no commits were selected for rewriting")
     current_source_oid = _decode(run_git(repository, ["rev-parse", f"refs/heads/{branch}"]))
@@ -516,6 +661,8 @@ def rewrite(config: Config) -> RewriteResult:
         recent_count,
         old_count,
         cutoff,
+        (preserved_prefix_index + 1) if preserved_prefix_index is not None else 0,
+        finish_rule_date,
     )
 
 
@@ -525,12 +672,19 @@ def print_success(result: RewriteResult) -> None:
     print(f"Destination branch: {result.destination_branch}")
     print(f"Source commits: {result.source_count}")
     print(f"Recreated commits: {result.rewritten_count}")
+    if result.preserved_prefix_count:
+        print(f"Existing compressed prefix retained: {result.preserved_prefix_count}")
     print(f"Recent commits replayed individually: {result.recent_count}")
-    print(f"Old-history representatives: {result.old_representative_count}")
+    print(f"Old-history commits selected: {result.old_representative_count}")
     print(f"Cutoff (UTC): {cutoff}")
     print(f"Original source tip retained: {result.source_oid}")
     print(f"Rewritten destination tip: {result.rewritten_oid}")
     print(f"Source branch remains checked out: {result.source_branch}")
+    if result.finish_rule_date is not None:
+        print(
+            "Finish rule: stopped re-compressing already-compressed history "
+            f"through {result.finish_rule_date}."
+        )
     print("Warning: recreated commits have new SHAs; older history was sampled into time buckets.")
 
 
@@ -540,6 +694,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         result = rewrite(config)
     except UserDeclined as exc:
         print(str(exc))
+        print("No changes made.")
+        return 0
+    except AlreadyCompressedHistory as exc:
+        print(f"Finish rule: {exc}")
         print("No changes made.")
         return 0
     except (AppError, GitError) as exc:

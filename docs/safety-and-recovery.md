@@ -11,7 +11,7 @@
 
 - Original commit IDs are not preserved anywhere on the rewritten branch.
 - Recent commits also receive new IDs because they are recreated with a different parent chain and new committer metadata.
-- Old commits other than the final representative in each occupied bucket are omitted from the rewritten branch.
+- Older commits are omitted when their dates are bucketed; dates already at or below the configured density may preserve all their existing commits.
 - Original committer identity/date, commit signatures, merge topology, mergetags, and unlisted commit headers are not copied.
 
 The tool therefore creates a compact historical view, not a cryptographically or forensically equivalent archive.
@@ -33,6 +33,8 @@ Commit objects are built before a branch ref is published. If parsing or constru
 The only intentionally mutable ref is `refs/heads/squashed/YYYY_MM_DD`. Its update is protected by the previously observed value, preventing silent overwrite if another process changes it concurrently.
 
 The utility does not check out the destination after publication. The source branch remains checked out, and switching to the new branch is an explicit user action.
+
+If the older history already has more than seven consecutive dates at or below the configured density, the default finish rule stops scanning at that already-compressed prefix. The prefix remains as the destination's existing parent chain, while newer commits are rewritten. If no newer commits exist, the utility exits successfully without creating or changing a destination ref. Use `--force-recheck-all` when a full recheck is intentional.
 
 ## Comparing the result
 
