@@ -49,6 +49,7 @@ The testing configuration should use a short retention window and positive densi
 - Always select the tip when retention is zero.
 - Preserve all commits on an old date already containing at most `X` commits.
 - Scan newest-to-oldest and retain an existing prefix when eight adjacent old dates are already compressed; rewrite newer commits and continue with the override.
+- Parse multiple `git cat-file --batch` responses by declared byte length and preserve complete message bytes.
 
 ## 4. Primary integration scenario
 

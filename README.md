@@ -105,8 +105,10 @@ The source history is read with:
 
 ```text
 git rev-list --reverse --parents <source-tip>
-git cat-file commit <commit-id>
+git cat-file --batch
 ```
+
+The ordered commit IDs from `rev-list` are sent to one persistent batch request. This avoids starting one `git cat-file` process per source commit. The length-delimited responses preserve complete commit-message bytes safely, including embedded newlines.
 
 The script checks for merge commits and retains each selected commit's tree, complete message, author identity, author timestamp, and author offset.
 

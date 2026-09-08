@@ -57,7 +57,9 @@ Run subprocesses using argument arrays, captured output, and `shell=False`. Set 
 
 Read commits reachable from the captured source object ID in reverse order so the in-memory sequence is oldest first. Do not resolve `HEAD` repeatedly after preflight.
 
-For every commit, retain the original tree, complete message bytes, author identity, author epoch, and numeric offset. Avoid subject-only formats or line-oriented parsing for messages. Parsing raw commit objects or an equivalently lossless NUL-safe Git interface is acceptable.
+Read all ordered commit objects through one `git cat-file --batch` subprocess. Send the object IDs from `rev-list` through standard input and parse each response using its declared byte length; do not start one Git subprocess per commit.
+
+For every commit, retain the original tree, complete message bytes, author identity, author epoch, and numeric offset. Avoid subject-only formats or line-oriented parsing for messages. Batch parsing must remain byte-exact for complete messages, including embedded newlines and non-UTF-8 bytes.
 
 The implementation may assume author names and emails are valid text accepted by the host process environment. Commit messages must remain bytes and be passed unchanged to `git commit-tree`.
 

@@ -174,6 +174,41 @@ class SelectionTests(unittest.TestCase):
                 counts[key] = counts.get(key, 0) + 1
         self.assertTrue(all(value <= 5 for value in counts.values()))
 
+    def test_batch_parser_preserves_complete_message_bytes(self) -> None:
+        first_oid = "a" * 40
+        second_oid = "b" * 40
+        first_message = b"subject one\n\nbody one\xff\n"
+        second_message = b"subject two\n"
+
+        def raw_commit(tree: bytes, message: bytes, epoch: int) -> bytes:
+            return (
+                b"tree "
+                + tree
+                + b"\nauthor Batch Author <batch@example.test> "
+                + str(epoch).encode("ascii")
+                + b" +0230\ncommitter Batch Committer <batch@example.test> "
+                + str(epoch).encode("ascii")
+                + b" +0230\n\n"
+                + message
+            )
+
+        first_raw = raw_commit(b"1" * 40, first_message, 100)
+        second_raw = raw_commit(b"2" * 40, second_message, 200)
+        batch_output = (
+            f"{first_oid} commit {len(first_raw)}\n".encode("ascii")
+            + first_raw
+            + b"\n"
+            + f"{second_oid} commit {len(second_raw)}\n".encode("ascii")
+            + second_raw
+            + b"\n"
+        )
+
+        commits = squash.parse_batch_commits(batch_output, [first_oid, second_oid])
+        self.assertEqual([commit.oid for commit in commits], [first_oid, second_oid])
+        self.assertEqual(commits[0].message, first_message)
+        self.assertEqual(commits[1].message, second_message)
+        self.assertEqual(commits[0].author_offset, "+0230")
+
 
 class IntegrationTests(unittest.TestCase):
     @classmethod

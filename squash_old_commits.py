@@ -317,8 +317,7 @@ def parse_author_line(value: bytes) -> tuple[str, str, int, str]:
     return name, email, epoch, offset
 
 
-def read_commit(repository: Path, oid: str) -> SourceCommit:
-    raw = run_git(repository, ["cat-file", "commit", oid])
+def parse_commit_object(oid: str, raw: bytes) -> SourceCommit:
     separator = raw.find(b"\n\n")
     if separator < 0:
         raise GitError(f"commit {oid} has no message separator")
@@ -335,19 +334,67 @@ def read_commit(repository: Path, oid: str) -> SourceCommit:
     return SourceCommit(oid, tree, raw[separator + 2 :], name, email, epoch, offset)
 
 
+def parse_batch_commits(output: bytes, expected_oids: Sequence[str]) -> list[SourceCommit]:
+    commits: list[SourceCommit] = []
+    position = 0
+    for expected_oid in expected_oids:
+        header_end = output.find(b"\n", position)
+        if header_end < 0:
+            raise GitError(f"git cat-file --batch returned no header for commit {expected_oid}")
+        header = output[position:header_end]
+        position = header_end + 1
+        if header.endswith(b" missing"):
+            raise GitError(f"git cat-file --batch could not find commit {expected_oid}")
+        pieces = header.split()
+        if len(pieces) != 3:
+            raise GitError(f"unexpected git cat-file --batch header for commit {expected_oid}")
+        object_oid, object_type, size_value = pieces
+        if object_oid.decode("ascii", errors="replace") != expected_oid:
+            raise GitError(
+                f"git cat-file --batch returned commit {object_oid.decode('ascii', errors='replace')} "
+                f"while {expected_oid} was expected"
+            )
+        if object_type != b"commit":
+            raise GitError(f"object {expected_oid} is not a commit")
+        try:
+            object_size = int(size_value)
+        except ValueError as exc:
+            raise GitError(f"invalid git cat-file --batch size for commit {expected_oid}") from exc
+        content_end = position + object_size
+        if content_end > len(output):
+            raise GitError(f"truncated git cat-file --batch content for commit {expected_oid}")
+        raw_commit = output[position:content_end]
+        position = content_end
+        if output[position : position + 1] != b"\n":
+            raise GitError(f"missing git cat-file --batch terminator for commit {expected_oid}")
+        position += 1
+        commits.append(parse_commit_object(expected_oid, raw_commit))
+    if position != len(output):
+        raise GitError("git cat-file --batch returned unexpected trailing data")
+    return commits
+
+
+def read_commits_batch(repository: Path, oids: Sequence[str]) -> list[SourceCommit]:
+    if not oids:
+        return []
+    requests = b"".join(oid.encode("ascii") + b"\n" for oid in oids)
+    output = run_git(repository, ["cat-file", "--batch"], input_data=requests)
+    return parse_batch_commits(output, oids)
+
+
 def read_linear_history(repository: Path, source_oid: str) -> list[SourceCommit]:
     raw = run_git(repository, ["rev-list", "--reverse", "--parents", source_oid])
-    commits: list[SourceCommit] = []
+    oids: list[str] = []
     for line in raw.splitlines():
         pieces = line.split()
         if len(pieces) > 2:
             raise AppError("history is not linear: a merge commit is reachable from the checked-out branch")
         if len(pieces) not in {1, 2}:
             raise GitError("unexpected parent data while reading linear history")
-        commits.append(read_commit(repository, pieces[0].decode("ascii")))
-    if not commits:
+        oids.append(pieces[0].decode("ascii"))
+    if not oids:
         raise AppError("checked-out branch has no commits")
-    return commits
+    return read_commits_batch(repository, oids)
 
 
 def parse_offset_minutes(offset: str) -> int:

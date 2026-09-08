@@ -35,6 +35,7 @@ If a requested change conflicts with the documents, update the affected document
 - Dependencies are allowed when they materially improve correctness or maintainability. Declare every runtime dependency in `requirements.txt`; the current implementation uses `python-dotenv` for `.env` loading and the `git` executable from `PATH`.
 - Prefer a small set of typed data structures and pure selection functions so bucket behavior can be unit tested independently.
 - Preserve commit messages as bytes through the read/write path. Do not rebuild messages from the subject line.
+- Read source commit objects with one `git cat-file --batch` subprocess; do not reintroduce one subprocess per source commit.
 - Pass author identity and author date explicitly to `git commit-tree`; do not preserve the original committer identity or timestamp.
 - Sanitize inherited `GIT_AUTHOR_*` and `GIT_COMMITTER_*` variables before creating commits.
 - Use `git -C <repository>` or an equivalent explicit subprocess working directory. Do not change the caller's global working directory.
