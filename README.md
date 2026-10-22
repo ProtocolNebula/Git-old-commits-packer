@@ -11,6 +11,21 @@ The utility will keep the most recent configured number of days as individual co
 
 The production script and standard-library integration tests are implemented. The generated Git fixture under `automated_test/repository` is disposable and ignored by Git.
 
+## Recommended workflow
+
+1. Run this script (after configure)
+2. Force the expiration of the reflog
+3. Run the garbage collector
+4. Force the push to the repo
+
+### Example
+
+```
+python squash_old_commits.py
+git reflog expire --expire=now --all
+git gc --prune=now
+```
+
 ## Command-line interface
 
 ```text
